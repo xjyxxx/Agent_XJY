@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Persona Replay · 双人聊天语气分身</title>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <strong>Persona Replay</strong>
+      <span class="sub">双人聊天语气分身</span>
+    </div>
+    <div class="meta">
+      <span id="health" class="pill">未连接</span>
+      <span id="session-pill" class="pill ghost">无会话</span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- 左：导入 / 会话 / 对话 -->
+    <section class="panel chat-panel">
+      <div class="section" id="import-section">
+        <h2>1 · 导入聊天记录</h2>
+        <label class="field">
+          <span>文件路径（仅允许项目内）</span>
+          <input id="chat-path" value="fixtures/chat_laowang_xiaolin.txt" spellcheck="false" />
+        </label>
+        <button id="btn-import" class="btn">解析记录</button>
+        <div id="import-result" class="hint"></div>
+      </div>
+
+      <div class="section hidden" id="session-section">
+        <h2>2 · 指定角色</h2>
+        <div class="row">
+          <label class="field">
+            <span>我是（user）</span>
+            <select id="user-speaker"></select>
+          </label>
+          <label class="field">
+            <span>AI 扮演（target）</span>
+            <select id="target-speaker"></select>
+          </label>
+        </div>
+        <button id="btn-session" class="btn">建立会话</button>
+        <div id="session-result" class="hint"></div>
+      </div>
+
+      <div class="section hidden" id="chat-section">
+        <h2>3 · 开始对话</h2>
+        <div id="messages" class="messages"></div>
+
+        <div id="interrupt-box" class="interrupt hidden">
+          <div class="interrupt-title">需要人工裁决</div>
+          <div id="interrupt-reason" class="hint"></div>
+          <div id="interrupt-reply" class="interrupt-reply"></div>
+          <label class="field">
+            <span>改写为</span>
+            <input id="interrupt-edit" placeholder="留空则只批准/拒绝" />
+          </label>
+          <div class="row">
+            <button class="btn" data-decision="approve">批准发送</button>
+            <button class="btn ghost" data-decision="edit">按改写内容发送</button>
+            <button class="btn danger" data-decision="reject">拒绝</button>
+          </div>
+        </div>
+
+        <form id="composer" class="composer">
+          <input id="message" placeholder="以「我是」的身份说一句…" autocomplete="off" />
+          <button class="btn" type="submit">发送</button>
+        </form>
+        <div class="hint">发送后按 SSE 顺序收到：persona → retrieved → draft → critique → reply_delta → done</div>
+      </div>
+    </section>
+
+    <!-- 右：依据 / 判定 / 事件流 -->
+    <aside class="panel side-panel">
+      <div class="tabs">
+        <button class="tab active" data-tab="evidence">依据</button>
+        <button class="tab" data-tab="critique">判定</button>
+        <button class="tab" data-tab="events">事件流</button>
+      </div>
+
+      <div class="tab-body" id="tab-evidence">
+        <div id="persona-card" class="card"></div>
+        <div id="evidence-list" class="evidence"></div>
+      </div>
+
+      <div class="tab-body hidden" id="tab-critique">
+        <div id="critique-box" class="card">还没有判定结果。</div>
+      </div>
+
+      <div class="tab-body hidden" id="tab-events">
+        <pre id="event-log" class="event-log"></pre>
+      </div>
+    </aside>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
