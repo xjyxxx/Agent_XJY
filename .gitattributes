@@ -1,0 +1,8 @@
+# 统一换行，避免 Windows/Linux 来回改整个文件
+* text=auto eol=lf
+
+# 二进制资源不要做行尾转换
+*.png binary
+*.jpg binary
+*.ico binary
+*.sqlite3 binary
