@@ -1,0 +1,97 @@
+[
+  {
+    "id": "q01_noodle",
+    "query": "那我看看附近有什么店，你最近不是说想吃面吗",
+    "expected_line": 4,
+    "group": "same_situation",
+    "note": "与历史里老王的原话几乎一致，期望命中 line 4 的「嗯嗯都行」"
+  },
+  {
+    "id": "q02_nearby",
+    "query": "要不就在公司旁边",
+    "expected_line": 6,
+    "group": "same_situation"
+  },
+  {
+    "id": "q03_meet",
+    "query": "六点半下班后我去找你",
+    "expected_line": 8,
+    "group": "same_situation"
+  },
+  {
+    "id": "q04_nickname",
+    "query": "这个称呼怎么又叫回来了",
+    "expected_line": 10,
+    "group": "same_situation"
+  },
+  {
+    "id": "q05_ticket",
+    "query": "周末的电影票我已经买好了，别临时放我鸽子",
+    "expected_line": 12,
+    "group": "same_situation"
+  },
+  {
+    "id": "q06_overtime",
+    "query": "今晚加班的话晚饭你自己先吃",
+    "expected_line": 15,
+    "group": "same_situation",
+    "note": "line_number 是消息起始行（时间戳头行 15），内容在 16 行"
+  },
+  {
+    "id": "q07_tooshort",
+    "query": "你回复得也太短了吧，至少说一下你想吃什么",
+    "expected_line": 19,
+    "group": "same_situation"
+  },
+  {
+    "id": "q08_noodle_shop",
+    "query": "还是上次那家面馆，我提前过去排队",
+    "expected_line": 23,
+    "group": "same_situation"
+  },
+  {
+    "id": "q09_remind",
+    "query": "那我下午再提醒你一次",
+    "expected_line": 26,
+    "group": "same_situation"
+  },
+  {
+    "id": "q10_ticket_reminder",
+    "query": "电影票别忘了啊",
+    "expected_line": 12,
+    "group": "paraphrase",
+    "note": "换了说法，字面重叠少，用来测语义缺口"
+  },
+  {
+    "id": "q11_self_resolve",
+    "query": "晚饭我自己解决吗",
+    "expected_line": 15,
+    "group": "paraphrase"
+  },
+  {
+    "id": "q12_saturday",
+    "query": "周六还去吗",
+    "expected_line": null,
+    "group": "no_match"
+  },
+  {
+    "id": "q13_report",
+    "query": "帮我写季度总结",
+    "expected_line": null,
+    "group": "no_match"
+  },
+  {
+    "id": "h01_movie_word",
+    "query": "那片子上映了记得叫我",
+    "expected_line": 12,
+    "group": "hard",
+    "note": "与「周末的电影票…」零字面重叠：只能靠语义或人工同义词"
+  },
+  {
+    "id": "h02_late_home",
+    "query": "我晚上要晚点回来",
+    "expected_line": 15,
+    "group": "hard",
+    "note": "与「今晚加班的话…」零字面重叠"
+  }
+]

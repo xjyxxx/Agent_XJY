@@ -1,0 +1,25 @@
+[
+  {"id": "s01_ticket", "query": "周六下午吧，三点那场还有票", "expected_line": 4, "group": "same_situation"},
+  {"id": "s02_pigeon", "query": "上次你也是这么说的，结果放我鸽子", "expected_line": 8, "group": "same_situation"},
+  {"id": "s03_noodle", "query": "中午吃什么，公司楼下那家面馆还开着", "expected_line": 12, "group": "same_situation"},
+  {"id": "s04_queue", "query": "我十二点下去排队，你直接过来", "expected_line": 16, "group": "same_situation"},
+  {"id": "s05_busy", "query": "你那边最近也忙吗", "expected_line": 20, "group": "same_situation"},
+  {"id": "s06_hotel", "query": "酒店我找靠海的那家，上次住过", "expected_line": 28, "group": "same_situation"},
+  {"id": "s07_park", "query": "你要不要一起，我六点在公园等你", "expected_line": 36, "group": "same_situation"},
+  {"id": "s08_scratch", "query": "要不要买个抓板", "expected_line": 44, "group": "same_situation"},
+  {"id": "s09_deadline", "query": "别又看情况，报名截止明天", "expected_line": 50, "group": "same_situation"},
+
+  {"id": "h01_movie", "query": "那片子上映了我订好位置了", "expected_line": 4, "group": "hard", "note": "片子≈科幻片、订位置≈买票"},
+  {"id": "h02_flake", "query": "上次答应的事又变卦", "expected_line": 8, "group": "hard", "note": "变卦≈放鸽子"},
+  {"id": "h03_lunch", "query": "午饭楼下解决还是点外卖", "expected_line": 12, "group": "hard", "note": "午饭≈中午吃什么"},
+  {"id": "h04_late", "query": "晚上又得干到很晚", "expected_line": 18, "group": "hard", "note": "干到很晚≈加班"},
+  {"id": "h05_seaside", "query": "假期想去海边玩几天", "expected_line": 26, "group": "hard", "note": "海边≈三亚、假期≈请假"},
+  {"id": "h06_exercise", "query": "我晚上去公园锻炼，你来吗", "expected_line": 36, "group": "hard", "note": "锻炼≈跑步"},
+  {"id": "h07_sofa", "query": "沙发被抓坏了怎么办", "expected_line": 44, "group": "hard", "note": "抓坏≈抓烂"},
+  {"id": "h08_money", "query": "手头有点紧，能周转一下吗", "expected_line": 38, "group": "hard", "note": "周转≈借钱"},
+  {"id": "h09_signup", "query": "明天截止报名，你决定了吗", "expected_line": 50, "group": "hard"},
+
+  {"id": "n01_report", "query": "帮我写个季度总结", "expected_line": null, "group": "no_match"},
+  {"id": "n02_weather", "query": "明天天气怎么样", "expected_line": null, "group": "no_match"},
+  {"id": "n03_python", "query": "你会写 Python 吗", "expected_line": null, "group": "no_match"}
+]

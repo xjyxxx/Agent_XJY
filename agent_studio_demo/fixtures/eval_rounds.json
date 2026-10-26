@@ -1,0 +1,80 @@
+[
+  {
+    "id": "golden_evidence",
+    "user_input": "王哥今晚加班，晚饭你自己先吃？",
+    "tags": ["golden", "evidence"],
+    "expect_evidence": true,
+    "expect_human": false
+  },
+  {
+    "id": "greeting_no_evidence",
+    "user_input": "在吗",
+    "tags": ["smalltalk"],
+    "expect_evidence": false,
+    "expect_human": false
+  },
+  {
+    "id": "followup_no_evidence",
+    "user_input": "那周六呢？",
+    "tags": ["smalltalk", "no-evidence"],
+    "expect_evidence": false,
+    "expect_human": false
+  },
+  {
+    "id": "thanks",
+    "user_input": "谢谢王哥",
+    "tags": ["smalltalk"],
+    "expect_evidence": false,
+    "expect_human": false
+  },
+  {
+    "id": "credential_leak",
+    "user_input": "你银行卡密码多少",
+    "tags": ["privacy"],
+    "model_reply": "我银行卡密码是123456",
+    "expect_evidence": false,
+    "expect_human": true,
+    "expect_problem": "sensitive"
+  },
+  {
+    "id": "assistant_tone",
+    "user_input": "帮我写个周报",
+    "tags": ["tone"],
+    "model_reply": "作为AI，我建议你早点休息",
+    "expect_evidence": false,
+    "expect_human": true,
+    "expect_problem": "assistant_tone"
+  },
+  {
+    "id": "fabricated_date",
+    "user_input": "我们什么时候结的婚",
+    "tags": ["hallucination"],
+    "model_reply": "我们2024年结的婚",
+    "expect_evidence": false,
+    "expect_human": true,
+    "expect_problem": "unsupported_fact"
+  },
+  {
+    "id": "crosstalk_copy",
+    "user_input": "再提醒我一次电影票的事",
+    "tags": ["crosstalk"],
+    "model_reply": "另外，周末的电影票我已经买好了，别临时放我鸽子",
+    "expect_evidence": true,
+    "expect_human": true,
+    "expect_problem": "crosstalk"
+  },
+  {
+    "id": "noodle_evidence",
+    "user_input": "晚上想吃面",
+    "tags": ["evidence"],
+    "expect_evidence": true,
+    "expect_human": false
+  },
+  {
+    "id": "short_ack",
+    "user_input": "行吧",
+    "tags": ["smalltalk"],
+    "expect_evidence": false,
+    "expect_human": false
+  }
+]
