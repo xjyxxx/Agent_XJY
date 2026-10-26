@@ -1,0 +1,48 @@
+# 预留依赖（统一安装入口）
+#     pip install -r requirements-optional.txt
+#
+# 只装当前**已启用**的能力；下面「未启用」的段落是预留位，
+# 到对应功能真正开工时再取消注释，避免现在就把环境搞重。
+#
+# 原则：核心链路不依赖本文件；缺任何一个，代码都应给出可操作的提示而不是崩溃。
+
+# --- 已启用：Day14 HTTP 层 ---------------------------------------------
+fastapi>=0.110
+uvicorn>=0.27
+
+# --- 已启用：官方编排引擎（方案文档要求「编排只用 LangGraph」）------------
+# 装了之后 GRAPH_ENGINE=auto 默认走官方实现；没装自动退回自研同构引擎。
+langgraph>=1.0
+langgraph-checkpoint-sqlite>=2.0
+
+# --- 已启用：高性能 server（可选；装了 `--server auto` 会优先用它） ------
+# 实测：传输层比 uvicorn 快约 22%，端到端持平（见 docs/performance.md）
+granian>=2.0
+
+# --- 已启用：测试（fastapi.testclient 依赖 httpx） ----------------------
+httpx>=0.27
+
+# --- 未启用：语义 embedding（本地跑，替代人工同义词表） -----------------
+# 触发条件：需要验证「同义改写召回」，且不想调外部 API 时
+# sentence-transformers>=3.0
+
+# --- 未启用：向量库（超过 1 万条历史记录再考虑） ------------------------
+# qdrant-client>=1.9
+# chromadb>=0.5
+
+# --- 已放弃：本地模型（不下载权重，改走远程 DeepSeek / OpenAI 兼容端点） --
+# 见 docs/remote-model.md；真要本地化就把 DEEPSEEK_BASE_URL 指向内网网关
+# ollama>=0.3
+
+# --- 未启用：长期记忆后端（mem0 可插拔） --------------------------------
+# mem0ai>=0.1
+
+# --- 未启用：测试框架迁移（unittest → pytest） --------------------------
+# pytest>=8.0
+
+# --- 未启用：前端交互验证（仅开发期；复用本机已装 Edge，不下载浏览器） ----
+# playwright>=1.40
+# 用法：python -m tests.ui_smoke http://127.0.0.1:8000/ runtime/ui-flow.png
+
+# --- 未启用：生产进程管理 ----------------------------------------------
+# gunicorn>=21.2 ; sys_platform != "win32"

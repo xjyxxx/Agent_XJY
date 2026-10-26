@@ -1,0 +1,8 @@
+# 核心链路（解析 / 检索 / 状态图 / checkpoint / 评估 / CLI / A-B）
+# 零第三方依赖：本文件故意不安装任何包。
+#
+# 可选能力（HTTP 层、向量库、本地模型…）统一登记在 requirements-optional.txt，
+# 需要时一次性安装：
+#     pip install -r requirements-optional.txt
+#
+# 取舍与清单见 docs/dependencies.md

@@ -1,0 +1,13 @@
+.git
+.gitignore
+.env
+.env.local
+**/__pycache__
+**/*.py[cod]
+.pytest_cache
+runtime
+*.sqlite3
+*.log
+docs/*.png
+tests/ui_smoke.py
+third_party
