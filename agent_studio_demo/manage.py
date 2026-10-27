@@ -130,6 +130,20 @@ def check_config() -> bool:
     return True
 
 
+def check_checkpoint(path: str) -> bool:
+    """启动前确认 checkpoint 没被别的进程占着（否则每个请求都会 500）。"""
+
+    from memory.checkpoint import CheckpointLocked, ensure_writable
+
+    try:
+        info = ensure_writable(path)
+    except CheckpointLocked as exc:
+        fail(str(exc))
+        return False
+    ok(f"checkpoint 可写：{info['path']}（journal={info['journal_mode']}）")
+    return True
+
+
 def check_frontend() -> bool:
     index = ROOT / "web" / "index.html"
     assets = [ROOT / "web" / name for name in ("app.js", "style.css")]
@@ -264,6 +278,9 @@ def run(args) -> int:
     if args.server:
         os.environ["SERVER"] = args.server
 
+    if not check_checkpoint(os.environ["CHECKPOINT_PATH"]):
+        return 2
+
     from transport.bundle import Transport
 
     transport = Transport(
@@ -282,6 +299,7 @@ def run(args) -> int:
     print(f"  API    {url}health · /docs（FastAPI 适配器时可用）")
     print(f"  适配器 {info.adapter} / {info.server}   模型 {transport.service.model_name}")
     print(f"  UDP    {info.udp[1] if info.udp else 'off'}   流式 {'on' if args.stream else 'off'}")
+    print(f"  数据   {os.environ['CHECKPOINT_PATH']}")
     print()
 
     if not args.no_open:

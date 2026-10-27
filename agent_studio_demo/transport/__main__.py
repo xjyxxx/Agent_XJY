@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 
 from transport.bundle import serve_forever
 
@@ -49,6 +50,14 @@ def main(argv=None) -> int:
         default=os.environ.get("CHECKPOINT_PATH", "runtime/api.sqlite3"),
     )
     args = parser.parse_args(argv)
+
+    from memory.checkpoint import CheckpointLocked, ensure_writable
+
+    try:
+        ensure_writable(args.checkpoint)
+    except CheckpointLocked as exc:
+        print(f"[xx] {exc}", file=sys.stderr)
+        return 2
 
     serve_forever(
         host=args.host,
