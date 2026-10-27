@@ -32,6 +32,24 @@ python -m evaluator.blind_test score runtime/blind/blind_sheet.csv
 
 `run` 会先做构建检查，再启动服务并自动打开 <http://127.0.0.1:8000/>。
 
+## 可靠性（工程化补齐）
+
+| 能力 | 行为 | 配置 |
+|---|---|---|
+| **模型重试** | 只重试临时故障：5xx / 超时 / 连接失败，指数退避 0.5s → 1s → 2s（上限 8s）；**4xx 一律不重试**（401/402/429/400 立即失败，避免重复计费） | `[model] max_retries = 2`、`retry_base_delay = 0.5` |
+| **流式重试** | 只在**首 token 之前**重试；已经输出过内容就报错不重试（否则两段文本拼接 + 重复计费） | 同上 |
+| **会话淘汰** | 按最后访问时间清理：默认 1 小时空闲、最多 64 个会话；淘汰时**同步删除 checkpoint** | `[server] session_ttl`、`session_max` |
+| **导入缓存淘汰** | 人设卡/索引按 TTL + LRU 淘汰；被淘汰的会话**按原参数重建**，checkpoint 里的 `chat_id` 不会悬空 | `SESSION_TTL` / `SESSION_MAX`（同一组变量） |
+| **CI** | GitHub Actions：Linux/Windows × Python 3.10/3.11 跑构建 + 全量测试；另一个 job 跑覆盖率（门槛 70%） | `.github/workflows/ci.yml` |
+| **前端容错** | 请求超时 120s；断线显示横幅 + 「重试」；未输出内容时自动重试 2 次（0.5s/1.5s），已输出则只提示不自动重发 | `web/app.js` |
+
+```powershell
+# 本地跑覆盖率（CI 里同样的命令）
+python -m pip install -r requirements-dev.txt
+python -m coverage run --source=. --omit="tests/*,third_party/*,docs/*" -m unittest discover -s tests -t . -p "test_*.py"
+python -m coverage report -m
+```
+
 > 编排引擎：装 `langgraph` 后默认走官方实现，否则退回零依赖的自研同构引擎
 > （`GRAPH_ENGINE=auto|langgraph|builtin`）。两者行为有等价测试
 > （`tests/test_langgraph_engine.py`）。
