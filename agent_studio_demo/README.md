@@ -42,8 +42,11 @@ python -m evaluator.blind_test score runtime/blind/blind_sheet.csv
 | **导入缓存淘汰** | 人设卡/索引按 TTL + LRU 淘汰；被淘汰的会话**按原参数重建**，checkpoint 里的 `chat_id` 不会悬空 | `SESSION_TTL` / `SESSION_MAX`（同一组变量） |
 | **CI** | GitHub Actions：Linux/Windows × Python 3.10/3.11 跑构建 + 全量测试；另一个 job 跑覆盖率（门槛 70%） | `.github/workflows/ci.yml` |
 | **CI 可诊断** | 测试失败会转成 GitHub **annotation**（`file:line` + 断言消息）——日志下载接口要仓库权限，注解是公开可读的 | `tools/ci_report.py` |
+| **工具链** | `ruff` 静态检查（未定义名/未用 import）+ `pytest` 跑全量（原生收集 unittest 用例，测试代码不用改） | `pyproject.toml`、`requirements-dev.txt` |
 | **checkpoint 并发** | WAL + `busy_timeout`；启动时做一次写锁探测，被别的进程占着就**直接退出**并给出改法；运行期写锁冲突也翻译成可读错误 | `[server] checkpoint_path`、`memory/checkpoint.py` |
 | **前端容错** | 请求超时 120s；断线显示横幅 + 「重试」；未输出内容时自动重试 2 次（0.5s/1.5s），已输出则只提示不自动重发 | `web/app.js` |
+| **faithfulness** | 借 RAGAS 的定义自己实现（零依赖）：事实断言里能被证据支持的比例；全是语气句时记 n/a 而不是 0 | `evaluator/faithfulness.py` |
+| **trace 标识** | 每轮一个 32-hex `trace_id`、每事件一个 16-hex `span_id`，另带 OTel 别名（`traceId`/`spanId`/`parentSpanId`） | `observability/trace.py` |
 
 > 同一台机器起多个实例时，**必须给每个实例单独的 `CHECKPOINT_PATH`**，例如
 > `$env:CHECKPOINT_PATH = 'runtime/api-8001.sqlite3'`。共用同一个文件会在启动时被拦下：
@@ -52,10 +55,25 @@ python -m evaluator.blind_test score runtime/blind/blind_sheet.csv
 > 给每个实例单独的数据库即可：$env:CHECKPOINT_PATH = 'runtime/api-<端口>.sqlite3'
 > ```
 
+### 可选集成（默认都不装）
+
+`python -m integrations` 查看状态。装了就多一种实现，不装走内置：
+
+| 库 | 用途 | 默认 | 说明 |
+|---|---|---|---|
+| mem0 | 事实抽取 + 去重（长期记忆） | 关闭 | 适配器已就绪，**未接主链路**；打开方式见 [docs/integrations.md](docs/integrations.md) |
+| ragas | 指标对齐 | 关闭 | 适配器按 0.2+ 接口写；接口不符会明确报错并提示用内置实现 |
+| langgraph | 官方编排引擎 | 自动 | 装了就走官方实现，否则退回自研同构引擎 |
+
+> 为什么默认不接：mem0 每条消息多一次模型调用；ragas 要拉 datasets/langchain 一整套。
+> 判断标准是"能不能只作为接口后面的一种实现"——能就接，不能就只借想法。
+
 ```powershell
 # 本地跑覆盖率（CI 里同样的命令）
 python -m pip install -r requirements-dev.txt
-python -m coverage run --source=. --omit="tests/*,third_party/*,docs/*" -m tools.ci_report
+python -m ruff check .
+python -m pytest -q
+python -m coverage run --source=. --omit="tests/*,third_party/*,docs/*" -m pytest -q
 python -m coverage report -m
 
 # 看 CI 最近几次运行（含失败注解，不需要登录）

@@ -22,6 +22,14 @@ granian>=2.0
 # --- 已启用：测试（fastapi.testclient 依赖 httpx） ----------------------
 httpx>=0.27
 
+# --- 可选集成：装了多一种实现，不装走内置（见 docs/integrations.md）------
+# 长期记忆：事实抽取 + 去重（默认关闭；每轮会多一次模型调用）
+# mem0ai>=0.1
+# 指标对齐：faithfulness 等（默认关闭；会拉 datasets/langchain 一整套）
+# ragas>=0.2
+# 标准 trace 导出（默认关闭；字段已按 OTel 命名，接 exporter 即可）
+# opentelemetry-sdk>=1.24
+
 # --- 未启用：语义 embedding（本地跑，替代人工同义词表） -----------------
 # 触发条件：需要验证「同义改写召回」，且不想调外部 API 时
 # sentence-transformers>=3.0
@@ -34,11 +42,7 @@ httpx>=0.27
 # 见 docs/remote-model.md；真要本地化就把 DEEPSEEK_BASE_URL 指向内网网关
 # ollama>=0.3
 
-# --- 未启用：长期记忆后端（mem0 可插拔） --------------------------------
-# mem0ai>=0.1
-
-# --- 未启用：测试框架迁移（unittest → pytest） --------------------------
-# pytest>=8.0
+# --- 测试框架与静态检查：见 requirements-dev.txt（pytest / ruff / coverage）--
 
 # --- 未启用：前端交互验证（仅开发期；复用本机已装 Edge，不下载浏览器） ----
 # playwright>=1.40
