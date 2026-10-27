@@ -5,6 +5,7 @@
 """
 
 import json
+import os
 import socket
 import sys
 import threading
@@ -358,8 +359,12 @@ class StaticAndSandboxTests(unittest.TestCase):
             self.assertNotIn("DEEPSEEK_API_KEY", client.get("/../.env").text)
 
     def test_import_path_must_stay_inside_chat_root(self) -> None:
+        # 必须用"当前平台真的算绝对路径"的样本：
+        # `C:/Windows/win.ini` 在 Linux 上是相对路径，会走"文件不存在"分支，
+        # 断言 CHAT_ROOT 就会假失败（CI 上就这么挂的）。
+        system_absolute = "C:/Windows/win.ini" if os.name == "nt" else "/etc/passwd"
         with stdlib_transport(new_service()) as client:
-            for attempt in ("C:/Windows/win.ini", "/etc/passwd", "../../secrets.txt"):
+            for attempt in (system_absolute, "../../secrets.txt"):
                 with self.subTest(path=attempt):
                     response = client.post("/chats/import", {"path": attempt})
                     self.assertEqual(response.status_code, 400, response.text)
