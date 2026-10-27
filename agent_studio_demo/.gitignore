@@ -9,3 +9,8 @@ runtime/
 # 本地配置文件（真实密钥只在这里；settings.ini.example 才是入库的模板）
 config/settings.ini
 config/*.local.ini
+
+# 测试与覆盖率产物
+.coverage
+coverage.xml
+htmlcov/
