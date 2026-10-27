@@ -24,7 +24,6 @@ from typing import Dict, List, Optional, Tuple
 
 from agent.control import GraphInterrupt
 from agent.nodes import (
-    DEGRADED_REPLY,
     VALID_ACTIONS,
     apply_decision,
     critic_node,
@@ -38,7 +37,7 @@ from agent.state import AgentState
 from ingest.session_store import get_session
 from llm_client.heuristic import HeuristicReplyModel, ReplyModel
 from memory.checkpoint import SQLiteCheckpointer
-from memory.persona import ShortTermMemory
+from observability.trace import new_span_id, new_trace_id
 
 
 START = "__start__"
@@ -361,7 +360,12 @@ class PersonaReplayRuntime:
         on_event: Optional[EventListener] = None,
         on_delta: Optional[DeltaSink] = None,
     ) -> AgentState:
-        inputs: dict = {"user_input": user_input}
+        inputs: dict = {
+            "user_input": user_input,
+            # 每轮一个新 trace：观测事件靠它串起来（见 observability/trace.py）
+            "trace_id": new_trace_id(),
+            "root_span_id": new_span_id(),
+        }
         if chat_path is not None:
             inputs["chat_path"] = chat_path
         if user_speaker is not None:

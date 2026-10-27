@@ -8,7 +8,6 @@ import json
 import os
 import socket
 import sys
-import threading
 import time
 import unittest
 import urllib.error
@@ -91,7 +90,7 @@ class UrllibClient:
         return self._request("DELETE", path)
 
 
-class TestClientAdapter:
+class ClientHarness:
     def __init__(self, client):
         self._client = client
 
@@ -290,7 +289,7 @@ class ContractTests(unittest.TestCase):
         from transport.http.fastapi_adapter import create_app
 
         service = new_service()
-        client = TestClientAdapter(
+        client = ClientHarness(
             TestClient(create_app(checkpoint_path=":memory:", service=service))
         )
         exercise_contract(self, client)

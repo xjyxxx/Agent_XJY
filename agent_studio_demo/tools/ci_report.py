@@ -57,11 +57,48 @@ def annotate(test, traceback_text: str, kind: str) -> None:
         print(f"::error title={escape(title)}::{escape(message[:600])}")
 
 
+def from_junit(path: Path) -> int:
+    """把 pytest 的 junit xml 转成注解（pytest 跑挂了时用）。"""
+
+    import xml.etree.ElementTree as ET
+
+    if not path.is_file():
+        print(f"::warning::没找到 {path}，跳过失败注解")
+        return 1
+
+    failures = 0
+    for case in ET.parse(path).getroot().iter("testcase"):
+        for tag in ("failure", "error"):
+            node = case.find(tag)
+            if node is None:
+                continue
+            failures += 1
+            message = (node.get("message") or node.text or tag).strip().splitlines()
+            detail = message[0] if message else tag
+            title = f"{case.get('classname', '')}.{case.get('name', '')}".strip(".")
+            file_name = case.get("file") or ""
+            line = case.get("line") or "1"
+            print(
+                f"::error file={escape(file_name)},line={line},"
+                f"title={escape(title)}::{escape(detail[:600])}"
+            )
+    print(f"junit: {failures} 个失败", flush=True)
+    return 1 if failures else 0
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Run tests and emit GitHub annotations")
     parser.add_argument("--pattern", default="test_*.py")
     parser.add_argument("--verbosity", type=int, default=1)
+    parser.add_argument(
+        "--from-junit",
+        type=Path,
+        help="不从 unittest 跑，而是读 pytest 的 junit xml 生成注解",
+    )
     args = parser.parse_args(argv)
+
+    if args.from_junit:
+        return from_junit(args.from_junit)
 
     suite = unittest.TestLoader().discover(
         str(PROJECT_ROOT / "tests"),

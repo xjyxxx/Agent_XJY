@@ -340,7 +340,7 @@ def main(argv=None) -> int:
     run_parser.add_argument("--no-open", action="store_true", help="不自动打开浏览器")
     run_parser.add_argument("--skip-build", action="store_true", help="跳过构建检查直接起")
 
-    all_parser = sub.add_parser("all", help="build + test + run")
+    sub.add_parser("all", help="build + test + run")
 
     args = parser.parse_args(argv)
     if args.command in (None, "build"):

@@ -1,0 +1,19 @@
+# 工具配置（pytest / ruff）。运行时依赖不在这里——核心零依赖，
+# 可选依赖见 requirements-optional.txt，开发工具见 requirements-dev.txt。
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q"
+# 第三方库的 DeprecationWarning 不该让 CI 变红
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 110
+exclude = [".git", "__pycache__", "runtime", "third_party", "docs", ".ci-venv"]
+
+[tool.ruff.lint]
+# 先只开"语法错误 + pyflakes"：未定义名、未用 import、重复定义。
+# 不一次性开 E501/格式化规则，避免为了风格改一整个代码库。
+select = ["E9", "F"]

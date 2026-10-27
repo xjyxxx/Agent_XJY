@@ -143,7 +143,6 @@ def fleiss_kappa(table: Sequence[Sequence[int]]) -> float:
     if not rows:
         return 0.0
     n_subjects = len(rows)
-    n_raters = sum(rows[0])
     p_i = []
     for row in rows:
         total = sum(row)
@@ -216,11 +215,9 @@ def simulate(sheet_path: Path, key_path: Optional[Path] = None, out: Optional[Pa
     """用 LLM judge 填一遍，只用于**验证流程**，不是真的人工结论。"""
 
     load_dotenv()
-    from evaluator.llm_judge import JUDGE_SYSTEM, JUDGE_USER
+    from evaluator.llm_judge import JUDGE_SYSTEM
     from llm_client.deepseek import chat_once
 
-    key_path = key_path or (sheet_path.parent / "blind_key.json")
-    key = json.loads(Path(key_path).read_text(encoding="utf-8"))
     with Path(sheet_path).open(encoding="utf-8-sig", newline="") as handle:
         rows = list(csv.DictReader(handle))
 

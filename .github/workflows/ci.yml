@@ -40,17 +40,26 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install fastapi uvicorn langgraph langgraph-checkpoint-sqlite
+          python -m pip install -r requirements-dev.txt
 
       - name: 环境自检
         run: |
           python -c "import sys; print(sys.version)"
           python -c "import fastapi, uvicorn, langgraph; print('deps ok')"
 
+      - name: 静态检查（ruff：未定义名 / 未用 import / 语法错误）
+        run: python -m ruff check .
+
       - name: 构建检查（Python/配置/前端/样例/编译/导入冒烟）
         run: python manage.py build
 
       - name: 单元测试
-        run: python tools/ci_report.py --verbosity 2
+        run: python -m pytest -q --junitxml=test-report.xml
+
+      # 日志下载接口要仓库权限，注解是公开可读的——失败时把原因写进注解。
+      - name: 失败转注解
+        if: failure()
+        run: python tools/ci_report.py --from-junit test-report.xml
 
   coverage:
     name: coverage
@@ -71,11 +80,12 @@ jobs:
       - name: 安装依赖
         run: |
           python -m pip install --upgrade pip
-          python -m pip install fastapi uvicorn langgraph langgraph-checkpoint-sqlite coverage
+          python -m pip install fastapi uvicorn langgraph langgraph-checkpoint-sqlite
+          python -m pip install -r requirements-dev.txt
 
       - name: 跑覆盖率
         run: |
-          coverage run --source=. --omit="tests/*,third_party/*,docs/*" -m tools.ci_report
+          coverage run --source=. --omit="tests/*,third_party/*,docs/*" -m pytest -q
           coverage report -m --fail-under=70
           coverage xml -o coverage.xml
 
