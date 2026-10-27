@@ -6,6 +6,12 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Windows runner 的 stdout 默认是 cp1252，打印中文会 UnicodeEncodeError。
+# 统一开 UTF-8，比在每个脚本里 try/except 编码更可靠。
+env:
+  PYTHONUTF8: "1"
+  PYTHONIOENCODING: "utf-8"
+
 jobs:
   test:
     name: test (${{ matrix.os }} / py${{ matrix.python }})
@@ -44,7 +50,7 @@ jobs:
         run: python manage.py build
 
       - name: 单元测试
-        run: python -m unittest discover -s tests -t . -p "test_*.py" -v
+        run: python tools/ci_report.py --verbosity 2
 
   coverage:
     name: coverage
@@ -69,7 +75,7 @@ jobs:
 
       - name: 跑覆盖率
         run: |
-          coverage run --source=. --omit="tests/*,third_party/*,docs/*" -m unittest discover -s tests -t . -p "test_*.py"
+          coverage run --source=. --omit="tests/*,third_party/*,docs/*" -m tools.ci_report
           coverage report -m --fail-under=70
           coverage xml -o coverage.xml
 

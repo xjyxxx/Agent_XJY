@@ -24,5 +24,6 @@ runtime/
 .idea/
 .vscode/
 .pytest_cache/
+.ci-venv/
 .DS_Store
 Thumbs.db
