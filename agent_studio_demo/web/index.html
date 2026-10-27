@@ -19,6 +19,15 @@
     </div>
   </header>
 
+  <!-- 连接/服务错误横幅：可关闭，网络恢复后自动消失 -->
+  <div id="banner" class="banner hidden" role="alert" aria-live="polite">
+    <span id="banner-text"></span>
+    <span class="banner-actions">
+      <button id="banner-retry" class="btn small hidden">重试</button>
+      <button id="banner-close" class="btn small ghost" aria-label="关闭提示">关闭</button>
+    </span>
+  </div>
+
   <main class="layout">
     <!-- 左：导入 / 会话 / 对话 -->
     <section class="panel chat-panel">

@@ -87,6 +87,21 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px r
 .btn:disabled { opacity: .5; cursor: not-allowed; }
 .btn.ghost { background: transparent; border: 1px solid var(--line); color: var(--text); }
 .btn.danger { background: transparent; border: 1px solid #5b2a2f; color: var(--danger); }
+.btn.small { padding: 5px 10px; font-size: 12px; border-radius: 7px; }
+
+/* 连接/服务异常横幅：不遮挡对话，可关闭 */
+.banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin: 10px 22px 0; padding: 10px 14px;
+  border: 1px solid #5b2a2f; border-left: 4px solid var(--danger);
+  background: rgba(255, 93, 93, .08); color: #ffd7d7;
+  border-radius: 10px; font-size: 13px;
+}
+.banner.info {
+  border-color: #3f4a63; border-left-color: var(--warn);
+  background: rgba(240, 180, 41, .08); color: #ffe9b8;
+}
+.banner-actions { display: flex; gap: 8px; flex: 0 0 auto; }
 
 .hint { color: var(--muted); font-size: 12px; margin-top: 8px; }
 .hint.error { color: var(--danger); }

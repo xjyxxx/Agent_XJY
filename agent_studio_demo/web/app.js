@@ -16,7 +16,11 @@ const state = {
   streaming: false,
   assistantEl: null,
   messageCount: 0,
+  lastSent: null,
 };
+
+const STREAM_TIMEOUT_MS = 120000;
+const STREAM_MAX_RETRIES = 2;
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => {
@@ -41,16 +45,45 @@ function setHint(id, text, isError = false) {
 }
 
 async function api(path, options = {}) {
-  const response = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
-  });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail || body);
-    throw new Error(`${response.status} ${detail}`);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+  try {
+    const response = await fetch(path, {
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      ...options,
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail || body);
+      throw new Error(`${response.status} ${detail}`);
+    }
+    return body;
+  } finally {
+    clearTimeout(timer);
   }
-  return body;
+}
+
+/* ---------------- 错误横幅 + 重试策略 ---------------- */
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function showBanner(text, { retryable = false, info = false } = {}) {
+  $("banner-text").textContent = text;
+  $("banner").classList.toggle("info", info);
+  $("banner-retry").classList.toggle("hidden", !retryable);
+  $("banner").classList.remove("hidden");
+}
+
+function hideBanner() {
+  $("banner").classList.add("hidden");
+  $("banner-retry").classList.add("hidden");
+}
+
+function isTransient(error) {
+  if (!error) return false;
+  if (error.name === "AbortError") return true; // 超时
+  if (error instanceof TypeError) return true; // fetch 网络层失败
+  return /network|fetch|aborted|timeout|连接|断开/i.test(String(error.message || error));
 }
 
 /* ---------------- 1. 健康检查 ---------------- */
@@ -211,34 +244,70 @@ function addMessage(role, text) {
   return bubble;
 }
 
-/* ---------------- 5. 发送 + SSE ---------------- */
-async function sendMessage(text) {
+/* ---------------- 5. 发送 + SSE ----------------
+ * 重试边界（重要）：
+ * - 只能在"还没吐出任何内容"时自动重试。已经开始输出后重试 = 两段文本拼接 +
+ *   同一轮重复计费，比失败更糟。
+ * - 自动重试只覆盖网络/超时；4xx/5xx 的 JSON 错误不重试（那是确定性的失败）。
+ * - 已经收到部分内容时，横幅改为提示"点重试会重发这条消息"——因为 SSE 是
+ *   一次性 POST 流，服务端没有 resumable 语义，只能整轮重发。
+ */
+async function sendMessage(text, { retry = false } = {}) {
   if (!state.sessionId || state.streaming || !text.trim()) return;
   state.streaming = true;
+  state.lastSent = text;
   $("message").value = "";
-  addMessage("me", text);
-  const bubble = addMessage("ai", "");
+  if (!retry) addMessage("me", text);
+  const bubble = state.assistantEl || addMessage("ai", "");
+  bubble.textContent = "";
   bubble.parentElement.classList.add("pending");
   state.assistantEl = bubble;
   $("evidence-list").innerHTML = "";
   renderCritique(null);
 
+  const url = `/sessions/${state.sessionId}/stream?message=${encodeURIComponent(text)}`;
+  let attempt = 0;
   try {
-    const url = `/sessions/${state.sessionId}/stream?message=${encodeURIComponent(text)}`;
-    const response = await fetch(url);
-    if (!response.ok || !response.body) {
-      const body = await response.json().catch(() => ({}));
-      throw new Error(`${response.status} ${body.detail || ""}`);
+    for (;;) {
+      attempt += 1;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), STREAM_TIMEOUT_MS);
+      try {
+        const response = await fetch(url, { signal: controller.signal });
+        if (!response.ok || !response.body) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(`${response.status} ${body.detail || ""}`.trim());
+        }
+        await readSSE(response.body, handleEvent);
+        hideBanner();
+        state.messageCount += 1;
+        return;
+      } catch (error) {
+        const partial = (bubble.textContent || "").length > 0;
+        if (!partial && attempt <= STREAM_MAX_RETRIES && isTransient(error)) {
+          log("retry", { attempt, message: error.message });
+          await sleep(500 * Math.pow(3, attempt - 1));
+          continue;
+        }
+        throw error;
+      } finally {
+        clearTimeout(timer);
+      }
     }
-    await readSSE(response.body, handleEvent);
-    bubble.parentElement.classList.remove("pending");
-    state.messageCount += 1;
   } catch (error) {
+    const partial = (bubble.textContent || "").length > 0;
     bubble.parentElement.classList.remove("pending");
-    bubble.textContent = `（出错：${error.message}）`;
-    log("error", { message: error.message });
+    if (!bubble.textContent) bubble.textContent = "（没有收到回复）";
+    showBanner(
+      partial
+        ? `连接中断：已保留收到的内容。点「重试」会重新发送这条消息（可能多算一轮）。`
+        : `请求失败：${error.message}`,
+      { retryable: Boolean(state.lastSent) }
+    );
+    log("error", { message: error.message, partial, attempts: attempt });
   } finally {
     state.streaming = false;
+    bubble.parentElement.classList.remove("pending");
   }
 }
 
@@ -314,6 +383,7 @@ function handleEvent(event, data) {
       break;
     case "error":
       state.assistantEl.textContent = `（流错误：${data.detail || ""}）`;
+      showBanner(`服务端流错误：${data.detail || "未知原因"}`, { retryable: true });
       break;
     default:
       break;
@@ -353,6 +423,18 @@ async function decide(action) {
 /* ---------------- 7. 绑定 ---------------- */
 $("btn-import").addEventListener("click", importChat);
 $("btn-session").addEventListener("click", createSession);
+$("banner-close").addEventListener("click", hideBanner);
+$("banner-retry").addEventListener("click", () => {
+  hideBanner();
+  if (state.lastSent) sendMessage(state.lastSent, { retry: true });
+});
+window.addEventListener("offline", () =>
+  showBanner("网络已断开；恢复后点「重试」可继续。", { retryable: true, info: true })
+);
+window.addEventListener("online", () => {
+  hideBanner();
+  checkHealth();
+});
 $("composer").addEventListener("submit", (event) => {
   event.preventDefault();
   sendMessage($("message").value);
