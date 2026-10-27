@@ -41,13 +41,25 @@ python -m evaluator.blind_test score runtime/blind/blind_sheet.csv
 | **会话淘汰** | 按最后访问时间清理：默认 1 小时空闲、最多 64 个会话；淘汰时**同步删除 checkpoint** | `[server] session_ttl`、`session_max` |
 | **导入缓存淘汰** | 人设卡/索引按 TTL + LRU 淘汰；被淘汰的会话**按原参数重建**，checkpoint 里的 `chat_id` 不会悬空 | `SESSION_TTL` / `SESSION_MAX`（同一组变量） |
 | **CI** | GitHub Actions：Linux/Windows × Python 3.10/3.11 跑构建 + 全量测试；另一个 job 跑覆盖率（门槛 70%） | `.github/workflows/ci.yml` |
+| **CI 可诊断** | 测试失败会转成 GitHub **annotation**（`file:line` + 断言消息）——日志下载接口要仓库权限，注解是公开可读的 | `tools/ci_report.py` |
+| **checkpoint 并发** | WAL + `busy_timeout`；启动时做一次写锁探测，被别的进程占着就**直接退出**并给出改法；运行期写锁冲突也翻译成可读错误 | `[server] checkpoint_path`、`memory/checkpoint.py` |
 | **前端容错** | 请求超时 120s；断线显示横幅 + 「重试」；未输出内容时自动重试 2 次（0.5s/1.5s），已输出则只提示不自动重发 | `web/app.js` |
+
+> 同一台机器起多个实例时，**必须给每个实例单独的 `CHECKPOINT_PATH`**，例如
+> `$env:CHECKPOINT_PATH = 'runtime/api-8001.sqlite3'`。共用同一个文件会在启动时被拦下：
+> ```text
+> [xx] checkpoint 被另一个进程占用：runtime\api.sqlite3
+> 给每个实例单独的数据库即可：$env:CHECKPOINT_PATH = 'runtime/api-<端口>.sqlite3'
+> ```
 
 ```powershell
 # 本地跑覆盖率（CI 里同样的命令）
 python -m pip install -r requirements-dev.txt
-python -m coverage run --source=. --omit="tests/*,third_party/*,docs/*" -m unittest discover -s tests -t . -p "test_*.py"
+python -m coverage run --source=. --omit="tests/*,third_party/*,docs/*" -m tools.ci_report
 python -m coverage report -m
+
+# 看 CI 最近几次运行（含失败注解，不需要登录）
+..\scripts\ci_status.ps1
 ```
 
 > 编排引擎：装 `langgraph` 后默认走官方实现，否则退回零依赖的自研同构引擎
