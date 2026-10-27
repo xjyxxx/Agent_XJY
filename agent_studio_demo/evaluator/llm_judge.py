@@ -18,6 +18,8 @@ from typing import Callable, Dict, Iterable, List, Optional, Sequence
 
 from agent.graph import PersonaReplayRuntime
 from agent.nodes import ASSISTANT_TONE, copied_from_other
+from evaluator.faithfulness import aggregate as aggregate_faithfulness
+from evaluator.faithfulness import score as faithfulness_score
 from evaluator.rules import (
     assistant_tone_hits,
     style_similarity,
@@ -181,6 +183,21 @@ def evaluate(
             session = get_session(state.chat_id)
             other = session.other_speaker_messages() if session else ()
             metrics = judge.assess(raw, other)
+            # RAGAS 式 faithfulness：只统计"有事实断言"的轮次，语气句算 n/a。
+            evidence = []
+            for item in state.retrieved or []:
+                if isinstance(item, dict):
+                    evidence.extend([str(item.get("content", "")), str(item.get("context", ""))])
+                else:
+                    evidence.extend(
+                        [
+                            str(getattr(item, "content", "")),
+                            str(getattr(item, "context", "")),
+                        ]
+                    )
+            metrics.notes["faithfulness"] = faithfulness_score(
+                state.reply, [text for text in evidence if text]
+            )
         finally:
             runtime.close()
 
@@ -267,6 +284,14 @@ def aggregate(records: Sequence[RoundRecord]) -> dict:
         )
         if clean
         else 0.0,
+        # 借 RAGAS 的定义：事实断言里能被证据支持的比例；全是语气句时是 n/a。
+        "faithfulness": aggregate_faithfulness(
+            [record.metrics.notes.get("faithfulness") for record in clean]
+        ),
+        # 对抗轮次才是"编不编造"的高发区，单独给一份。
+        "faithfulness_adversarial": aggregate_faithfulness(
+            [record.metrics.notes.get("faithfulness") for record in adversarial]
+        ),
     }
 
 

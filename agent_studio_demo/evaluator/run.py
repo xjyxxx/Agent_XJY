@@ -117,6 +117,12 @@ def main(argv=None) -> int:
         print("summary:")
         for key, value in metrics.items():
             print(f"  {key:<22} {value}")
+        clean_faith = metrics.get("faithfulness") or {}
+        if clean_faith.get("applicable", 0) == 0:
+            print(
+                "  注：faithfulness 统计的是「事实断言能否被证据支持」，"
+                "本轮回复全是语气句 → 不适用（不是 0 分）。"
+            )
         print()
         print("thresholds:", json.dumps(DEFAULT_THRESHOLDS, ensure_ascii=False))
         if failures:
