@@ -17,7 +17,7 @@ import json
 import re
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from typing import Any, Dict, Iterator, Optional, Tuple
 from urllib.parse import parse_qs, unquote, urlparse
 
 from transport.handlers import ApiHandlers, ValidationError, sse_frame

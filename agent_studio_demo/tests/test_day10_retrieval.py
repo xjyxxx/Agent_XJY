@@ -18,7 +18,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from rag import ab_test
-from rag.embedding import HashingEmbedder, HttpEmbedder, build_embedder, cosine
+from rag.embedding import HashingEmbedder, build_embedder, cosine
 from rag.history_index import HistoryIndex
 from rag.retriever import (
     ExpandedRetriever,

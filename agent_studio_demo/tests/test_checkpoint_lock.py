@@ -4,7 +4,6 @@
 而错误信息只有 "database is locked"，从 HTTP 层完全看不出原因。
 """
 
-import sqlite3
 import sys
 import tempfile
 import unittest

@@ -13,7 +13,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from rag.embedding import Embedder, cosine
 from rag.history_index import CONTENT_WEIGHT, CONTEXT_WEIGHT, HistoryHit, HistoryIndex

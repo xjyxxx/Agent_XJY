@@ -1,7 +1,6 @@
 """模型调用重试：只重试临时故障，4xx 立刻失败，流式已输出则不重试。"""
 
 import sys
-import time
 import unittest
 from pathlib import Path
 from unittest import mock
