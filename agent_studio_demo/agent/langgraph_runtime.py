@@ -38,6 +38,7 @@ from agent.nodes import (
 from agent.state import AgentState
 from ingest.session_store import get_session
 from llm_client.heuristic import HeuristicReplyModel, ReplyModel
+from observability.trace import new_span_id, new_trace_id
 
 
 class ReplayState(TypedDict, total=False):
@@ -217,6 +218,9 @@ class LangGraphRuntime:
             "human_decision": None,
             "status": "ok",
             "steps": [],
+            # 每轮一个新 trace（与内置引擎一致，事件靠它串起来）
+            "trace_id": new_trace_id(),
+            "root_span_id": new_span_id(),
         }
         if chat_path is not None:
             inputs["chat_path"] = chat_path

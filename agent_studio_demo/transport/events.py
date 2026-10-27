@@ -22,6 +22,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Protocol
 
+from observability.trace import new_span_id, trace_fields
+
 
 class EventSink(Protocol):
     name: str
@@ -131,7 +133,9 @@ class EventBus:
             self._last = now
 
         critique = state.get("critique") or {}
-        return {
+        trace_id = str(state.get("trace_id") or "")
+        root_span = str(state.get("root_span_id") or "")
+        event: Dict[str, Any] = {
             "ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
             "event": str(name),
             # 边界到上一个事件的间隔 ≈ 上一个节点的耗时（emit 在节点返回之后）。
@@ -145,6 +149,11 @@ class EventBus:
             "problems": list(critique.get("problems") or []),
             "steps": list(state.get("steps") or []),
         }
+        if trace_id:
+            # 有 trace 就带上：一轮的 4–9 个事件因此能串起来。
+            # 兜底也给了 OTel 字段名（traceId/spanId/parentSpanId），导出不用再映射。
+            event.update(trace_fields(trace_id, root_span or trace_id, new_span_id()))
+        return event
 
     def close(self) -> None:
         for sink in self.sinks:

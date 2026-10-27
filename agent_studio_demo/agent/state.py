@@ -37,6 +37,9 @@ class AgentState:
     status: str = "ok"
     pending: Optional[dict] = None
     human_decision: Optional[str] = None
+    # 观测：一轮对话共享 trace_id，事件各自带 span_id（OTel 风格）
+    trace_id: str = ""
+    root_span_id: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -65,4 +68,6 @@ class AgentState:
             status=str(value.get("status", "ok")),
             pending=value.get("pending"),
             human_decision=value.get("human_decision"),
+            trace_id=str(value.get("trace_id", "")),
+            root_span_id=str(value.get("root_span_id", "")),
         )
