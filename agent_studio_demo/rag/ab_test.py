@@ -142,6 +142,12 @@ def main(argv=None) -> int:
         default="small",
         help="small = 20 条语料的 15 条 query；large = 50 条语料的 21 条 query（含 9 条硬改写）",
     )
+    parser.add_argument(
+        "--rerank",
+        choices=("none", "llm"),
+        default="none",
+        help="llm = 先词法召回 8 条，再让模型重排（语义代理，需要 key）",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
@@ -174,9 +180,22 @@ def main(argv=None) -> int:
             print(f"[skip] expander={args.expander}: {exc}", file=sys.stderr)
             return 2
 
+    retrievers = build_retrievers(index, embedder, expander)
+    reranker = None
+    if args.rerank == "llm":
+        from llm_client.factory import load_dotenv
+        from rag.llm_rerank import LlmReranker, RerankedRetriever
+
+        load_dotenv()
+        try:
+            reranker = LlmReranker()
+        except RuntimeError as exc:
+            print(f"[skip] rerank=llm: {exc}", file=sys.stderr)
+            return 2
+        retrievers.append(RerankedRetriever(retrievers[0], reranker))
+
     results = {
-        retriever.name: score_backend(retriever, queries)
-        for retriever in build_retrievers(index, embedder, expander)
+        retriever.name: score_backend(retriever, queries) for retriever in retrievers
     }
 
     if args.json:
@@ -191,6 +210,8 @@ def main(argv=None) -> int:
         print("fp = no_match 组里被误召回的比例（越低越好）")
         if getattr(expander, "failures", 0):
             print(f"[warn] 扩写失败 {expander.failures} 次，已退回原 query")
+        if getattr(reranker, "failures", 0):
+            print(f"[warn] 重排失败 {reranker.failures} 次，已退回原顺序")
     return 0
 
 

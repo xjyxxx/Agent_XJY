@@ -43,6 +43,11 @@ checkpoint_path = runtime/api.sqlite3
 session_ttl = 3600
 # 最多保留多少个会话（0 = 不限制）
 session_max = 64
+# 对外提供服务时必填：客户端要带 Authorization: Bearer <token>
+# 留空 = 不鉴权（只允许配合 host = 127.0.0.1 使用）
+api_token =
+# 每个客户端每分钟最多多少个请求（0 = 不限制）
+rate_limit_per_minute = 0
 # 本地 trace 落盘路径，留空则不写
 trace_jsonl =
 
@@ -53,6 +58,10 @@ stream = 0
 persona_llm = 0
 # 1 = 检索时用模型做查询扩写
 expand_query = 0
+# 1 = Critic 里加一道模型复核（补"无数字编造"，每轮最多多一次调用）
+critic_llm = 0
+# 1 = 检索后让模型重排（语义代理；每轮多一次调用，约 +0.5s）
+rerank_llm = 0
 # 允许导入的聊天文件根目录，留空 = 项目根
 chat_root =
 

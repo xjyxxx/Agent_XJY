@@ -48,9 +48,13 @@ ENV_MAP: Dict[tuple, str] = {
     ("server", "trace_jsonl"): "TRACE_JSONL",
     ("server", "session_ttl"): "SESSION_TTL",
     ("server", "session_max"): "SESSION_MAX",
+    ("server", "api_token"): "API_TOKEN",
+    ("server", "rate_limit_per_minute"): "RATE_LIMIT_PER_MINUTE",
     ("features", "stream"): "STREAM",
     ("features", "persona_llm"): "PERSONA_LLM",
     ("features", "expand_query"): "EXPAND_QUERY",
+    ("features", "critic_llm"): "CRITIC_LLM",
+    ("features", "rerank_llm"): "RERANK_LLM",
     ("features", "chat_root"): "CHAT_ROOT",
     ("search", "min_evidence_score"): "MIN_EVIDENCE_SCORE",
 }
