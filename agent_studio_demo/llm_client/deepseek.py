@@ -20,6 +20,7 @@ OpenAI 兼容层、公司内网网关…）。**不下载本地模型也能跑�
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import time
@@ -34,6 +35,37 @@ from rag.history_index import HistoryHit
 DEFAULT_BASE_URL = "https://api.deepseek.com"
 DEFAULT_MODEL = "deepseek-flash"
 
+# 只重试"临时性故障"：服务端 5xx、连接失败、超时。
+# 4xx 一律不重试——请求本身有问题，重试只会重复计费且必然再失败。
+RETRYABLE_STATUS = frozenset({500, 502, 503, 504})
+DEFAULT_MAX_RETRIES = 2  # 总尝试次数 = 1 + 2 = 3
+DEFAULT_RETRY_BASE_DELAY = 0.5  # 秒；指数退避 0.5 → 1.0 → 2.0
+MAX_RETRY_DELAY = 8.0
+
+
+class ModelUnavailable(RuntimeError):
+    """临时故障（5xx / 超时 / 连接中断）。可安全重试：请求未被受理，不会重复计费。"""
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw in (None, ""):
+        return default
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw in (None, ""):
+        return default
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return default
+
 
 class DeepSeekReplyModel:
     """Call an OpenAI-compatible chat endpoint to draft a persona-style reply."""
@@ -46,6 +78,8 @@ class DeepSeekReplyModel:
         timeout: float = 60.0,
         on_usage=None,
         temperature: float = 0.7,
+        max_retries: Optional[int] = None,
+        retry_base_delay: Optional[float] = None,
     ):
         self.api_key = (api_key or os.environ.get("DEEPSEEK_API_KEY", "")).strip()
         if not self.api_key:
@@ -72,6 +106,19 @@ class DeepSeekReplyModel:
         self.on_usage = on_usage
         self.last_usage: dict = {}
         self.last_ttft_ms: Optional[float] = None
+
+        # 重试策略：只对 5xx / 超时 / 连接失败生效。可通过 settings.ini 的
+        # [model] max_retries / retry_base_delay 调整，测试里可注入 sleep。
+        if max_retries is None:
+            max_retries = _env_int("LLM_MAX_RETRIES", DEFAULT_MAX_RETRIES)
+        if retry_base_delay is None:
+            retry_base_delay = _env_float(
+                "LLM_RETRY_BASE_DELAY", DEFAULT_RETRY_BASE_DELAY
+            )
+        self.max_retries = max(0, int(max_retries))
+        self.retry_base_delay = max(0.0, float(retry_base_delay))
+        self.retries_used = 0
+        self._sleep = time.sleep
 
     # -- public API ------------------------------------------------------
     def generate(
@@ -102,11 +149,13 @@ class DeepSeekReplyModel:
         """Connectivity / auth / balance check with one tiny request."""
 
         started = time.perf_counter()
+        # 探针只打一次：它本身就是用来判断"现在通不通"的，重试会掩盖真实状态。
         reply = self._chat(
             system="你是一个连通性探针，只回两个字母：OK",
             user="ping",
             temperature=0.0,
             timeout=timeout,
+            attempts=1,
         )
         return {
             "ok": True,
@@ -257,19 +306,63 @@ class DeepSeekReplyModel:
             detail = exc.read().decode("utf-8", errors="replace")
             if exc.code == 401:
                 raise RuntimeError(
-                    "鉴权失败（401）：检查 DEEPSEEK_API_KEY 是否有效、是否有多余空格。"
+                    "鉴权失败（401）：检查 api_key 是否有效、是否有多余空格。"
                 ) from exc
             if exc.code == 402:
                 raise RuntimeError(
                     "余额不足（402）：请到 platform.deepseek.com 充值。"
                 ) from exc
             if exc.code == 429:
-                raise RuntimeError("被限流（429）：降低并发或加重试退避。") from exc
+                raise RuntimeError(
+                    "被限流（429）：降低并发或稍后再试。"
+                    "（按策略 4xx 不自动重试，避免放大压力）"
+                ) from exc
+            if exc.code in RETRYABLE_STATUS:
+                # 服务端临时故障：请求未被受理，重试不会重复计费
+                raise ModelUnavailable(
+                    f"模型接口 HTTP {exc.code}（可重试）: {detail[:200]}"
+                ) from exc
             raise RuntimeError(f"模型接口 HTTP {exc.code}: {detail[:300]}") from exc
         except urllib.error.URLError as exc:
-            raise RuntimeError(f"无法连接模型接口 {self.base_url}：{exc.reason}") from exc
+            # 连接拒绝 / DNS 失败 / 读超时都会走到这里（timeout 包在 reason 里）
+            raise ModelUnavailable(
+                f"无法连接模型接口 {self.base_url}：{exc.reason}"
+            ) from exc
+        except (TimeoutError, ConnectionError) as exc:
+            raise ModelUnavailable(f"连接模型接口超时/中断：{exc}") from exc
+
+    def _attempts(self) -> int:
+        return 1 + self.max_retries
+
+    def _retry_delay(self, attempt: int) -> float:
+        return min(self.retry_base_delay * (2 ** (attempt - 1)), MAX_RETRY_DELAY)
 
     def _chat(
+        self,
+        system: str,
+        user: str,
+        temperature: float = 0.7,
+        timeout: Optional[float] = None,
+        attempts: Optional[int] = None,
+    ) -> str:
+        """整轮重试：只有临时故障才重试，4xx 立即失败。"""
+
+        total = attempts if attempts is not None else self._attempts()
+        last: Optional[BaseException] = None
+        for attempt in range(1, total + 1):
+            try:
+                return self._chat_once(system, user, temperature, timeout)
+            except ModelUnavailable as exc:
+                last = exc
+                if attempt >= total:
+                    break
+                self.retries_used += 1
+                self._sleep(self._retry_delay(attempt))
+        raise RuntimeError(
+            f"模型接口连续 {total} 次不可用（已重试 {total - 1} 次）：{last}"
+        ) from last
+
+    def _chat_once(
         self,
         system: str,
         user: str,
@@ -287,6 +380,43 @@ class DeepSeekReplyModel:
             raise RuntimeError(f"模型返回格式异常：{body}") from exc
 
     def _chat_stream(
+        self, system: str, user: str, temperature: float = 0.7
+    ) -> Iterator[str]:
+        """流式重试：**只在还没吐出任何内容时**重试。
+
+        一旦已经输出过 token，重试会造成两段文本拼接、并把同一段内容重复计费，
+        所以这时直接报错，由上层决定要不要重发整轮。
+        """
+
+        total = self._attempts()
+        last: Optional[BaseException] = None
+        for attempt in range(1, total + 1):
+            emitted = False
+            try:
+                for piece in self._stream_once(system, user, temperature):
+                    emitted = True
+                    yield piece
+                return
+            except (
+                ModelUnavailable,
+                TimeoutError,
+                ConnectionError,
+                http.client.IncompleteRead,
+            ) as exc:
+                last = exc
+                if emitted:
+                    raise RuntimeError(
+                        f"流式输出中断（已输出部分内容，不自动重试以免重复）：{exc}"
+                    ) from exc
+                if attempt >= total:
+                    break
+                self.retries_used += 1
+                self._sleep(self._retry_delay(attempt))
+        raise RuntimeError(
+            f"模型接口连续 {total} 次不可用（已重试 {total - 1} 次）：{last}"
+        ) from last
+
+    def _stream_once(
         self, system: str, user: str, temperature: float = 0.7
     ) -> Iterator[str]:
         """Parse OpenAI-style SSE: lines of `data: {...}` terminated by `data: [DONE]`."""

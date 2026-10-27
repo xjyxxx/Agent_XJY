@@ -15,6 +15,10 @@
 api_key =
 base_url = https://api.deepseek.com
 model = deepseek-chat
+# 临时故障（5xx / 超时 / 连接失败）重试次数；4xx 一律不重试
+max_retries = 2
+# 指数退避基数（秒）：0.5 → 1 → 2
+retry_base_delay = 0.5
 
 # 语义检索用的 embedding（DeepSeek 没有 embeddings 接口，需要另一家服务）
 embedding_base_url =
@@ -35,6 +39,10 @@ port = 8000
 # 观测事件的 UDP 端口，0 = 关闭
 udp_port = 0
 checkpoint_path = runtime/api.sqlite3
+# 会话空闲多久清理（秒；0 = 不按时间清理）
+session_ttl = 3600
+# 最多保留多少个会话（0 = 不限制）
+session_max = 64
 # 本地 trace 落盘路径，留空则不写
 trace_jsonl =
 

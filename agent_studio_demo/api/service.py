@@ -9,7 +9,9 @@
 
 from __future__ import annotations
 
+import os
 import threading
+import time
 import uuid
 from typing import Callable, Dict, Optional
 
@@ -20,6 +22,19 @@ from llm_client.heuristic import ReplyModel
 
 
 EventListener = Callable[[str, dict], None]
+
+DEFAULT_SESSION_TTL = 3600.0
+DEFAULT_SESSION_MAX = 64
+
+
+def _env_number(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw in (None, ""):
+        return default
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return default
 
 
 class SessionNotFound(KeyError):
@@ -33,12 +48,27 @@ class SessionService:
         model: Optional[ReplyModel] = None,
         max_steps: int = 12,
         engine: Optional[str] = None,
+        session_ttl: Optional[float] = None,
+        session_max: Optional[int] = None,
     ):
         self.runtime = create_runtime(
             checkpoint_path, model=model, max_steps=max_steps, engine=engine
         )
         self._locks: Dict[str, threading.Lock] = {}
         self._guard = threading.Lock()
+        # 会话生命周期：按"最后访问时间"淘汰，避免长跑进程内存和 checkpoint 只增不减。
+        self.session_ttl = float(
+            session_ttl
+            if session_ttl is not None
+            else _env_number("SESSION_TTL", DEFAULT_SESSION_TTL)
+        )
+        self.session_max = int(
+            session_max
+            if session_max is not None
+            else _env_number("SESSION_MAX", DEFAULT_SESSION_MAX)
+        )
+        self._touched: Dict[str, float] = {}
+        self._clock = time.monotonic
 
     # -- helpers ---------------------------------------------------------
     def _lock_for(self, session_id: str) -> threading.Lock:
@@ -54,6 +84,55 @@ class SessionService:
         if state is None:
             raise SessionNotFound(session_id)
         return state
+
+    def _touch(self, session_id: str) -> None:
+        self._touched[session_id] = self._clock()
+
+    def sweep(self, now: Optional[float] = None) -> list[str]:
+        """清理过期/超量的会话，并**同步删除它们的 checkpoint**。
+
+        只在 create/send/resume 时顺手调用，没有后台线程——少一个线程就少一处
+        "关服务时它还在写库"的竞态。
+        """
+
+        moment = self._clock() if now is None else now
+        with self._guard:
+            tracked = dict(self._touched)
+
+        expired: list[str] = []
+        if self.session_ttl > 0:
+            expired = [
+                sid for sid, seen in tracked.items() if moment - seen > self.session_ttl
+            ]
+        if self.session_max > 0:
+            alive = sorted(
+                ((sid, seen) for sid, seen in tracked.items() if sid not in expired),
+                key=lambda item: item[1],
+            )
+            overflow = len(alive) - self.session_max
+            if overflow > 0:
+                expired.extend(sid for sid, _ in alive[:overflow])
+
+        removed: list[str] = []
+        for sid in expired:
+            if sid not in self._touched:
+                continue
+            try:
+                self.runtime.checkpointer.delete(sid)
+            except Exception:  # noqa: BLE001 - 清理失败不该影响本轮请求
+                pass
+            self._touched.pop(sid, None)
+            with self._guard:
+                self._locks.pop(sid, None)
+            removed.append(sid)
+        return removed
+
+    def stats(self) -> dict:
+        return {
+            "sessions": len(self._touched),
+            "session_ttl_seconds": self.session_ttl,
+            "session_max": self.session_max,
+        }
 
     # -- public API ------------------------------------------------------
     def import_chat(
@@ -73,13 +152,16 @@ class SessionService:
     ) -> AgentState:
         session = get_or_build(chat_path, user_speaker, target_speaker)
         sid = session_id or uuid.uuid4().hex[:12]
+        self.sweep()
         with self._lock_for(sid):
-            return self.runtime.prepare(
+            state = self.runtime.prepare(
                 thread_id=sid,
                 chat_path=str(chat_path),
                 user_speaker=session.user_speaker,
                 target_speaker=session.target_speaker,
             )
+        self._touch(sid)
+        return state
 
     def send(
         self,
@@ -88,14 +170,17 @@ class SessionService:
         on_event: Optional[EventListener] = None,
         on_delta=None,
     ) -> AgentState:
+        self.sweep()
         self._require(session_id)
         with self._lock_for(session_id):
-            return self.runtime.invoke(
+            state = self.runtime.invoke(
                 thread_id=session_id,
                 user_input=message,
                 on_event=on_event,
                 on_delta=on_delta,
             )
+        self._touch(session_id)
+        return state
 
     @property
     def model_name(self) -> str:
@@ -107,19 +192,26 @@ class SessionService:
         decision: dict,
         on_event: Optional[EventListener] = None,
     ) -> AgentState:
+        self.sweep()
         self._require(session_id)
         with self._lock_for(session_id):
-            return self.runtime.resume(
+            state = self.runtime.resume(
                 thread_id=session_id, decision=decision, on_event=on_event
             )
+        self._touch(session_id)
+        return state
 
     def get(self, session_id: str) -> AgentState:
-        return self._require(session_id)
+        self.sweep()
+        state = self._require(session_id)
+        self._touch(session_id)  # 读也算"访问"，否则只读的会话会莫名过期
+        return state
 
     def delete(self, session_id: str) -> None:
         self._require(session_id)
         with self._lock_for(session_id):
             self.runtime.checkpointer.delete(session_id)
+        self._touched.pop(session_id, None)
 
     def close(self) -> None:
         self.runtime.close()

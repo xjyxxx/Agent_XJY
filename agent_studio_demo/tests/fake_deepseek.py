@@ -25,16 +25,30 @@ class FakeDeepSeek:
         fail_status: Optional[int] = None,
         require_auth: bool = True,
         expected_token: str = "sk-test",
+        fail_plan: Optional[List[int]] = None,
+        delay_seconds: float = 0.0,
     ):
         self.reply = reply
         self.chunk_size = max(1, chunk_size)
         self.fail_status = fail_status
         self.require_auth = require_auth
         self.expected_token = expected_token
+        # 失败计划：按顺序消费，例如 [500, 500] 表示前两次失败、第三次成功。
+        # 用来验证"重试 + 退避"，而不是只验证单次失败。
+        self.fail_plan = list(fail_plan or [])
+        self.delay_seconds = delay_seconds
         self.requests: List[dict] = []
+        self.request_count = 0
         self.stream_requests = 0
-        self._server = ThreadingHTTPServer(("127.0.0.1", 0), self._handler())
-        self._server.daemon_threads = True
+
+        class QuietServer(ThreadingHTTPServer):
+            daemon_threads = True
+
+            def handle_error(self, request, client_address) -> None:
+                # 客户端超时/断开是测试的正常路径（例如验证重试），别刷屏
+                return
+
+        self._server = QuietServer(("127.0.0.1", 0), self._handler())
         self._thread: Optional[threading.Thread] = None
 
     # -- lifecycle -------------------------------------------------------
@@ -84,12 +98,21 @@ class FakeDeepSeek:
             def do_POST(self) -> None:  # noqa: N802
                 length = int(self.headers.get("Content-Length") or 0)
                 raw = self.rfile.read(length)
+                outer.request_count += 1
                 if self.path != "/chat/completions":
                     self._json(404, {"error": "not found"})
                     return
 
-                if outer.fail_status:
-                    self._json(outer.fail_status, {"error": {"message": "boom"}})
+                if outer.delay_seconds:
+                    import time as _time
+
+                    _time.sleep(outer.delay_seconds)
+
+                status = outer.fail_status
+                if outer.fail_plan:
+                    status = outer.fail_plan.pop(0)
+                if status:
+                    self._json(status, {"error": {"message": "boom"}})
                     return
 
                 if outer.require_auth:

@@ -14,9 +14,10 @@ from __future__ import annotations
 import hashlib
 import os
 import threading
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from memory.persona import (
     PersonaCard,
@@ -26,6 +27,30 @@ from memory.persona import (
 from rag.history_index import HistoryIndex
 from tools.chat_import import import_chat
 from tools.chat_parser import ParsedChat
+
+DEFAULT_MAX_SESSIONS = 32
+DEFAULT_TTL_SECONDS = 3600.0
+
+# 时钟可注入（测试用）：淘汰逻辑不该依赖真实等待。
+_now = time.monotonic
+
+
+def _env_number(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw in (None, ""):
+        return default
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return default
+
+
+def max_sessions() -> int:
+    return max(1, int(_env_number("SESSION_MAX", DEFAULT_MAX_SESSIONS)))
+
+
+def ttl_seconds() -> float:
+    return max(0.0, _env_number("SESSION_TTL", DEFAULT_TTL_SECONDS))
 
 
 @dataclass
@@ -39,6 +64,7 @@ class ChatSession:
     chat: ParsedChat
     persona: PersonaCard
     index: HistoryIndex
+    last_used: float = field(default=0.0)
 
     @property
     def speakers(self) -> List[str]:
@@ -56,6 +82,10 @@ class ChatSession:
 
 _CACHE: Dict[str, ChatSession] = {}
 _BY_ID: Dict[str, ChatSession] = {}
+# chat_id -> (path, user, target)。**不随淘汰删除**：它只占几十字节，
+# 却能让被淘汰的会话在下次访问时按原参数重建（否则 checkpoint 里引用的
+# chat_id 会变成悬空引用，整轮对话直接报错）。
+_SPECS: Dict[str, Tuple[str, str, str]] = {}
 _LOCK = threading.Lock()
 
 
@@ -104,6 +134,8 @@ def get_or_build(
     with _LOCK:
         cached = _CACHE.get(key)
         if cached is not None:
+            cached.last_used = _now()
+            _evict_locked()
             return cached
 
         chat = import_chat(path)
@@ -123,19 +155,79 @@ def get_or_build(
             chat=chat,
             persona=_build_persona(chat, target, user),
             index=HistoryIndex.from_chat(chat, target, user),
+            last_used=_now(),
         )
         _CACHE[key] = session
         _BY_ID[session.chat_id] = session
+        _SPECS[session.chat_id] = (str(path), user, target)
+        _evict_locked()
         return session
 
 
+def _evict_locked(now: Optional[float] = None) -> List[str]:
+    """按 TTL + 容量淘汰（调用方必须已持锁）。返回被淘汰的 chat_id。"""
+
+    moment = _now() if now is None else now
+    ttl = ttl_seconds()
+    capacity = max_sessions()
+
+    removed: List[str] = []
+    if ttl > 0:
+        for key in [k for k, s in _CACHE.items() if moment - s.last_used > ttl]:
+            removed.append(_CACHE.pop(key).chat_id)
+    if len(_CACHE) > capacity:
+        ordered = sorted(_CACHE.items(), key=lambda item: item[1].last_used)
+        for key, _ in ordered[: len(_CACHE) - capacity]:
+            removed.append(_CACHE.pop(key).chat_id)
+
+    for chat_id in removed:
+        # 同一个 chat_id 可能对应多个缓存键（不同 mtime）；还有就别删
+        if all(session.chat_id != chat_id for session in _CACHE.values()):
+            _BY_ID.pop(chat_id, None)
+    return removed
+
+
+def evict_now(now: Optional[float] = None) -> List[str]:
+    """主动淘汰一次（测试/运维用），返回被清理的 chat_id。"""
+
+    with _LOCK:
+        return _evict_locked(now)
+
+
+def stats() -> dict:
+    """缓存概况：给 /status 或排查用，不含聊天内容。"""
+
+    with _LOCK:
+        return {
+            "cached": len(_CACHE),
+            "by_id": len(_BY_ID),
+            "specs": len(_SPECS),
+            "max_sessions": max_sessions(),
+            "ttl_seconds": ttl_seconds(),
+        }
+
+
 def get_session(chat_id: str) -> Optional[ChatSession]:
-    """Look a session up by the id stored in graph state."""
+    """Look a session up by the id stored in graph state.
+
+    被 TTL/容量淘汰过的会话会**按原参数重建**，所以 checkpoint 里的 chat_id
+    不会因为缓存淘汰而失效。
+    """
 
     if not chat_id:
         return None
     with _LOCK:
-        return _BY_ID.get(chat_id)
+        session = _BY_ID.get(chat_id)
+        if session is not None:
+            session.last_used = _now()
+            return session
+        spec = _SPECS.get(chat_id)
+    if spec is None:
+        return None
+    path, user, target = spec
+    if not Path(path).is_file():
+        return None
+    return get_or_build(path, user, target)
 
 
 def clear() -> None:
@@ -144,3 +236,4 @@ def clear() -> None:
     with _LOCK:
         _CACHE.clear()
         _BY_ID.clear()
+        _SPECS.clear()
