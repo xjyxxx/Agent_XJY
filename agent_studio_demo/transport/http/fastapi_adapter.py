@@ -116,6 +116,20 @@ def create_app(
     app.state.service = service
     app.state.handlers = handlers
 
+    # 鉴权 + 限流放在中间件里：一处生效，新增路由不会漏。
+    @app.middleware("http")
+    async def _security_middleware(request, call_next):
+        client = request.client.host if request.client else ""
+        denied = handlers.guard(request.headers, client, request.url.path)
+        if denied is not None:
+            status, payload = denied
+            response = JSONResponse(status_code=status, content=payload)
+            retry_after = payload.get("retry_after_seconds")
+            if retry_after:
+                response.headers["Retry-After"] = str(retry_after)
+            return response
+        return await call_next(request)
+
     @app.exception_handler(ValidationError)
     def _validation_error(request, exc: ValidationError):  # pragma: no cover
         return JSONResponse(status_code=422, content={"detail": str(exc)})

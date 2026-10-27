@@ -52,6 +52,13 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
 
     from memory.checkpoint import CheckpointLocked, ensure_writable
+    from transport.security import InsecureBind, ensure_bind_is_safe
+
+    try:
+        ensure_bind_is_safe(args.host, os.environ.get("API_TOKEN", ""))
+    except InsecureBind as exc:
+        print(f"[xx] {exc}", file=sys.stderr)
+        return 2
 
     try:
         ensure_writable(args.checkpoint)

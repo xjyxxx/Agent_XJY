@@ -51,6 +51,10 @@ def _write_json(handler: BaseHTTPRequestHandler, status: int, payload: dict) -> 
     handler.send_response(status)
     handler.send_header("Content-Type", "application/json; charset=utf-8")
     handler.send_header("Content-Length", str(len(body)))
+    # 429 带上 Retry-After，客户端才知道该等多久（FastAPI 侧由中间件加）。
+    retry_after = payload.get("retry_after_seconds") if isinstance(payload, dict) else None
+    if retry_after:
+        handler.send_header("Retry-After", str(retry_after))
     handler.end_headers()
     handler.wfile.write(body)
 
@@ -84,8 +88,15 @@ def dispatch(
     path: str,
     query: Dict[str, str],
     body: Dict[str, Any],
+    headers=None,
+    client: str = "",
 ):
     """Route one request. Returns ('json', status, payload) or ('stream', 200, iter)."""
+
+    denied = handlers.guard(headers, client, path)
+    if denied is not None:
+        status, payload = denied
+        return "json", status, payload
 
     if method == "GET" and path == "/health":
         status, payload = handlers.health()
@@ -204,7 +215,13 @@ class StdlibHttpServer:
 
         try:
             kind, status, payload = dispatch(
-                self.handlers, method, parsed.path, query, body
+                self.handlers,
+                method,
+                parsed.path,
+                query,
+                body,
+                headers=handler.headers,
+                client=handler.client_address[0] if handler.client_address else '',
             )
         except ValidationError as exc:
             _write_json(handler, 422, {"detail": str(exc)})

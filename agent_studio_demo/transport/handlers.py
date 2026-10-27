@@ -16,10 +16,13 @@
 
 from __future__ import annotations
 
+import hmac
 import json
+import math
 import os
 import queue
 import threading
+import time
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
@@ -27,10 +30,20 @@ from api.service import SessionNotFound, SessionService, persona_for_chat, sessi
 from transport.events import EventBus
 
 
-API_VERSION = "0.10.0"
+API_VERSION = "0.11.0"
 SSE_TIMEOUT_SECONDS = 120
 REPLY_CHUNK_SIZE = 2
 VALID_ACTIONS = ("approve", "edit", "reject")
+# 这些路径不需要鉴权：健康检查给探活/负载均衡用，静态资源给浏览器加载页面。
+PUBLIC_PATHS = ("/health", "/", "/index.html", "/app.js", "/style.css")
+STATIC_SUFFIXES = (".html", ".js", ".css", ".ico", ".png", ".svg", ".woff2", ".map")
+
+
+def _is_public(path: str) -> bool:
+    if path in PUBLIC_PATHS:
+        return True
+    lowered = (path or "").lower()
+    return lowered.endswith(STATIC_SUFFIXES)
 
 # 只允许导入这个目录下的聊天文件。前端把 path 暴露给浏览器之后，这不再是"可选项"：
 # 没有它，`{"path": "C:/Users/.../任何文件"}` 就能读到进程能读的任何东西。
@@ -124,10 +137,108 @@ def chunks(text: str, size: int = REPLY_CHUNK_SIZE) -> List[str]:
     return [text[index : index + size] for index in range(0, len(text), size)]
 
 
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw in (None, ""):
+        return default
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default
+
+
+def _bearer_token(headers) -> str:
+    """从 Authorization 头取 token；也接受直接放在头里的裸 token。"""
+
+    value = None
+    getter = getattr(headers, "get", None)
+    if callable(getter):
+        value = getter("Authorization")
+    if value is None and hasattr(headers, "items"):
+        for key, item in headers.items():
+            if str(key).lower() == "authorization":
+                value = item
+                break
+    if not value:
+        return ""
+    parts = str(value).split(None, 1)
+    if len(parts) == 2 and parts[0].lower() == "bearer":
+        return parts[1].strip()
+    return str(value).strip()
+
+
 class ApiHandlers:
-    def __init__(self, service: SessionService, bus: Optional[EventBus] = None):
+    def __init__(
+        self,
+        service: SessionService,
+        bus: Optional[EventBus] = None,
+        token: Optional[str] = None,
+        rate_limit_per_minute: Optional[int] = None,
+        clock=time.monotonic,
+    ):
         self.service = service
         self.bus = bus
+        # 没配 token = 不鉴权（默认只监听 127.0.0.1，外面进不来）。
+        self.token = (token if token is not None else os.environ.get("API_TOKEN", "")).strip()
+        if rate_limit_per_minute is None:
+            rate_limit_per_minute = _env_int("RATE_LIMIT_PER_MINUTE", 0)
+        self.rate_limit = max(0, int(rate_limit_per_minute))
+        self._clock = clock
+        self._buckets: Dict[str, Tuple[float, float]] = {}
+        self._bucket_lock = threading.Lock()
+        self.rejected_auth = 0
+        self.rejected_rate = 0
+
+    # -- 安全闸门 --------------------------------------------------------
+    def guard(
+        self, headers: Optional[dict], client: str = "", path: str = ""
+    ) -> Optional[Tuple[Status, Payload]]:
+        """返回 None 表示放行；否则返回要直接写回的 (status, payload)。"""
+
+        if _is_public(path):
+            return None
+
+        if self.token:
+            supplied = _bearer_token(headers or {})
+            if not supplied or not hmac.compare_digest(supplied, self.token):
+                self.rejected_auth += 1
+                return 401, {
+                    "detail": "unauthorized：需要在 Authorization: Bearer <token> 里带 API_TOKEN",
+                }
+
+        if self.rate_limit > 0:
+            allowed, retry_after = self._consume(client or "anonymous")
+            if not allowed:
+                self.rejected_rate += 1
+                return 429, {
+                    "detail": "rate limited",
+                    "retry_after_seconds": retry_after,
+                }
+        return None
+
+    def _consume(self, key: str) -> Tuple[bool, int]:
+        """令牌桶：容量 = 每分钟额度，按秒匀速回填。"""
+
+        capacity = float(self.rate_limit)
+        refill_per_second = capacity / 60.0
+        now = self._clock()
+        with self._bucket_lock:
+            tokens, last = self._buckets.get(key, (capacity, now))
+            tokens = min(capacity, tokens + (now - last) * refill_per_second)
+            if tokens < 1.0:
+                wait = math.ceil((1.0 - tokens) / refill_per_second) if refill_per_second else 60
+                self._buckets[key] = (tokens, now)
+                return False, max(1, wait)
+            self._buckets[key] = (tokens - 1.0, now)
+            return True, 0
+
+    def security_summary(self) -> dict:
+        return {
+            "auth": "bearer" if self.token else "off",
+            "rate_limit_per_minute": self.rate_limit,
+            "rejected_auth": self.rejected_auth,
+            "rejected_rate": self.rejected_rate,
+        }
 
     # -- 基础 ------------------------------------------------------------
     def health(self) -> Tuple[Status, Payload]:
@@ -136,6 +247,7 @@ class ApiHandlers:
         if model_name:
             payload["model"] = model_name
         payload["stream"] = stream_enabled()
+        payload["auth_required"] = bool(self.token)
         return 200, payload
 
     # -- 导入与会话 ------------------------------------------------------

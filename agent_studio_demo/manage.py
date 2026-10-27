@@ -278,13 +278,22 @@ def run(args) -> int:
     if args.server:
         os.environ["SERVER"] = args.server
 
+    host = os.environ.get("HOST", "127.0.0.1")
+    from transport.security import InsecureBind, ensure_bind_is_safe
+
+    try:
+        ensure_bind_is_safe(host, os.environ.get("API_TOKEN", ""))
+    except InsecureBind as exc:
+        fail(str(exc))
+        return 2
+
     if not check_checkpoint(os.environ["CHECKPOINT_PATH"]):
         return 2
 
     from transport.bundle import Transport
 
     transport = Transport(
-        host="127.0.0.1",
+        host=host,
         tcp_port=port,
         udp_port=args.udp_port,
         adapter=args.adapter or "auto",

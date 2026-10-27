@@ -44,15 +44,34 @@ function setHint(id, text, isError = false) {
   node.className = "hint" + (isError ? " error" : "");
 }
 
+const TOKEN_KEY = "personaReplayToken";
+
+function authHeaders() {
+  const token = localStorage.getItem(TOKEN_KEY);
+  return token ? { Authorization: Bearer  } : {};
+}
+
+// 401 时问一次令牌，存本地后重试；用户取消就原样返回，让上层报错。
+async function withAuth(requestFactory) {
+  let response = await requestFactory();
+  if (response.status !== 401) return response;
+  const token = window.prompt("这个服务需要访问令牌（管理员配置的 API_TOKEN）：");
+  if (!token) return response;
+  localStorage.setItem(TOKEN_KEY, token.trim());
+  return requestFactory();
+}
+
 async function api(path, options = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20000);
   try {
-    const response = await fetch(path, {
-      headers: { "Content-Type": "application/json" },
-      signal: controller.signal,
-      ...options,
-    });
+    const response = await withAuth(() =>
+      fetch(path, {
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        signal: controller.signal,
+        ...options,
+      })
+    );
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
       const detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail || body);
@@ -273,7 +292,9 @@ async function sendMessage(text, { retry = false } = {}) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), STREAM_TIMEOUT_MS);
       try {
-        const response = await fetch(url, { signal: controller.signal });
+        const response = await withAuth(() =>
+          fetch(url, { signal: controller.signal, headers: authHeaders() })
+        );
         if (!response.ok || !response.body) {
           const body = await response.json().catch(() => ({}));
           throw new Error(`${response.status} ${body.detail || ""}`.trim());
