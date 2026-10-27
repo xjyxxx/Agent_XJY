@@ -2,6 +2,9 @@
 .env
 .env.*
 !.env.example
+# 本地配置文件：模板（*.example）入库，真实配置（settings.ini）永不入库
+**/config/settings.ini
+**/config/*.local.ini
 
 # Python ------------------------------------------------------------------
 __pycache__/

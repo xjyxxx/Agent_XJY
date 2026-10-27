@@ -114,6 +114,22 @@ def check_optional() -> dict:
     return found
 
 
+def check_config() -> bool:
+    """报告本地配置来源；不打印任何密钥值。"""
+
+    from config.loader import bootstrap, describe, status_line
+
+    bootstrap()
+    info = describe()
+    ok(status_line())
+    if not info["settings_exists"]:
+        warn(
+            "没有 config/settings.ini（可选）："
+            "复制 config/settings.ini.example 后填 api_key 即可用远程模型"
+        )
+    return True
+
+
 def check_frontend() -> bool:
     index = ROOT / "web" / "index.html"
     assets = [ROOT / "web" / name for name in ("app.js", "style.css")]
@@ -189,7 +205,14 @@ def run_tests(verbose: bool = False) -> bool:
 
 def build(with_tests: bool = False) -> bool:
     print(_c("== 构建检查 ==", "1"))
-    steps = [check_python, check_frontend, check_fixtures, compile_sources, smoke_imports]
+    steps = [
+        check_python,
+        check_config,
+        check_frontend,
+        check_fixtures,
+        compile_sources,
+        smoke_imports,
+    ]
     if not all(step() for step in steps):
         return False
     check_optional()

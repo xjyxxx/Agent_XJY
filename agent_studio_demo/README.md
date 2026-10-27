@@ -593,19 +593,28 @@ retrieve → draft
 
 Cursor 免费版不能在聊天框里选 `deepseek-flash`，但本 Demo **可直接调 DeepSeek 云 API**。费用只扣你在 [platform.deepseek.com](https://platform.deepseek.com) 的余额。
 
-1. 复制环境变量模板并填入 Key（不要把 `.env` 提交到 git）：
+1. 复制**配置文件模板**并填入 Key（推荐；`settings.ini` 已在 `.gitignore`，不会被提交）：
 
 ```powershell
-cd D:\\code_2026\\AI_Agent\\agent_studio_demo
-Copy-Item .env.example .env
-# 用编辑器打开 .env，把 DEEPSEEK_API_KEY=sk-你的密钥 改成真实 Key
+cd D:\code_2026\AI_Agent\agent_studio_demo
+Copy-Item config\settings.ini.example config\settings.ini
+# 用编辑器打开 config\settings.ini，填 [model] 下的 api_key
 ```
 
-2. 或在当前 PowerShell 会话临时设置：
+`config/settings.ini` 用 INI 格式，一个文件管模型 / 服务 / 功能开关 / 检索阈值，每项都有注释。
+仓库里只提交 `settings.ini.example`（值全空），所以**别人的 key 不会被你看到，你的 key 也不会进仓库**。
+
+2. 或临时用环境变量覆盖（优先级最高，适合一次性试验）：
 
 ```powershell
 $env:DEEPSEEK_API_KEY = "sk-你的密钥"
 $env:DEEPSEEK_MODEL = "deepseek-flash"
+```
+
+3. 检查配置（不打印密钥，只报来源）：
+
+```powershell
+python -m llm_client.check
 ```
 
 3. 运行（`--provider deepseek` 强制走 DeepSeek；`auto` 则有 Key 就用 DeepSeek，否则用本地 heuristic）：

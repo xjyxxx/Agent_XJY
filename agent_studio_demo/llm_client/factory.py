@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Optional
 
 from llm_client.heuristic import HeuristicReplyModel, ReplyModel
@@ -34,18 +35,16 @@ def create_reply_model(provider: str = "auto") -> ReplyModel:
 
 
 def load_dotenv(path: Optional[str] = None) -> None:
-    """Load KEY=VALUE lines from .env into os.environ (does not override existing)."""
+    """兼容旧入口：现在统一走 `config.bootstrap()`。
 
-    env_path = path or os.path.join(os.getcwd(), ".env")
-    if not os.path.isfile(env_path):
+    顺序：`config/settings.ini`（推荐） → `.env`（旧方式） → 不覆盖已有环境变量。
+    这样所有老调用点（CLI / API / 评估 / 预检）不用改就自动支持配置文件。
+    """
+
+    from config.loader import apply, bootstrap, read_env_file
+
+    if path:
+        # 显式指定文件时保持旧语义：只读这个 .env
+        apply(read_env_file(Path(path)))
         return
-    with open(env_path, encoding="utf-8") as handle:
-        for raw in handle:
-            line = raw.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            key = key.strip()
-            value = value.strip().strip("'").strip('"')
-            if key and key not in os.environ:
-                os.environ[key] = value
+    bootstrap()
