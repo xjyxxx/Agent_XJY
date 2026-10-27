@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from typing import List, Sequence
 
@@ -129,11 +130,44 @@ def retrieve_node(
     min_score: float = MIN_EVIDENCE_SCORE,
 ) -> dict:
     session, patch = _require_session(state)
-    hits = session.index.search(str(state.get("user_input", "")), limit=limit)
+    query = str(state.get("user_input", ""))
+    # 开了重排就先深召回（8 条），否则只取 limit 条——深召回会让重排有东西可排。
+    depth = max(8, limit) if _rerank_enabled() else limit
+    hits = session.index.search(query, limit=depth)
+    if _rerank_enabled():
+        hits = _rerank(query, hits, limit=limit)
     return {
         **patch,
         "retrieved": [hit.to_dict() for hit in hits if hit.score >= min_score],
     }
+
+
+# 重排器按进程缓存：每次新建会重复导入/读配置，但也没有状态需要共享。
+_RERANKER = None
+
+
+def _rerank_enabled() -> bool:
+    return os.environ.get("RERANK_LLM", "0").strip().lower() not in ("", "0", "false", "no")
+
+
+def _rerank(query: str, hits, limit: int):
+    """可选的语义重排（默认关闭）。
+
+    每轮多一次模型调用（约 +0.5s）。基准里 hard 组 hit@1 从 0.333 → 0.556，
+    但 n=9、McNemar p≈0.5，**未达统计显著**——所以默认不开，只作为可选项。
+    """
+
+    global _RERANKER
+    if _RERANKER is None:
+        try:
+            from rag.llm_rerank import LlmReranker
+
+            _RERANKER = LlmReranker(depth=max(8, limit))
+        except Exception:  # noqa: BLE001 - 没 key 就退回纯词法
+            _RERANKER = False
+    if not _RERANKER:
+        return hits
+    return _RERANKER.rerank(query, list(hits))[:limit]
 
 
 # --------------------------------------------------------------------------
@@ -230,7 +264,14 @@ def critic_node(
     state: dict,
     other_messages: Sequence[str] = (),
     max_rewrite: int = 2,
+    llm_check=None,
 ) -> dict:
+    """规则判定 +（可选）模型复核。
+
+    `llm_check` 只在 `CRITIC_LLM=1` 时传入。它补的是规则查不出的"无数字编造"：
+    "我们上个月办过婚礼"没有数字、没有敏感词，规则会放行，但它确实不在证据里。
+    复核失败一律跳过——判定不该成为主链路的失败点。
+    """
     reply = str(state.get("reply", "")).strip()
     persona = PersonaCard.from_dict(state["persona"])
     problems: List[str] = []
@@ -268,6 +309,19 @@ def critic_node(
     categories = sensitive_categories(reply)
     if categories:
         problems.append("sensitive")
+
+    # 规则查不出的编造：只对"带事实断言"的回复复核，省调用也避免误伤语气句。
+    if llm_check is not None and not problems:
+        try:
+            from evaluator.faithfulness import is_factual
+
+            claims = [claim for claim in re.split(r"[。！？；!?\n]+", reply) if claim.strip()]
+            if any(is_factual(claim) for claim in claims):
+                supported, _reason = llm_check(reply, evidence)
+                if not supported:
+                    problems.append("unsupported_fact_llm")
+        except Exception:  # noqa: BLE001 - 复核失败不影响规则结论
+            pass
 
     turns = state.get("short_memory", [])
     if len(turns) >= 2 and reply == turns[-2].get("assistant_reply", ""):

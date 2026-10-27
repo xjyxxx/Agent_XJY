@@ -150,10 +150,19 @@ class LangGraphRuntime:
             ),
         )
 
+        llm_check = None
+        from llm_client.verifier import critic_llm_enabled, make_llm_check
+
+        if critic_llm_enabled():
+            try:
+                llm_check = make_llm_check()
+            except Exception:  # noqa: BLE001 - 没 key 就退回纯规则
+                llm_check = None
+
         def critic_with_session(state: dict) -> dict:
             session = get_session(str(state.get("chat_id") or ""))
             other = session.other_speaker_messages() if session else ()
-            return critic_node(state, other)
+            return critic_node(state, other, llm_check=llm_check)
 
         graph.add_node("critic", self._node("critic", critic_with_session))
         graph.add_node("human_review", self._human_review)
