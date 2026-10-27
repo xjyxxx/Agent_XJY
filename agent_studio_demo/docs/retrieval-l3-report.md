@@ -38,8 +38,7 @@ hard 组 hit@1：lexical 0.333 / +synonym 0.333 / +llm 0.333
 对 9 条 hard query，把"原句 + 每个扩写关键词"各查一次，取最好名次：
 
 | 结果 | 条数 |
-|---|---|
-| 关键词能改善名次 | 2（rank2→1、rank5→4） |
+|---|---|| 关键词能改善名次 | 2（rank2→1、rank5→4） |
 | 无变化 | 7 |
 | **关键词也召回不到** | **4** |
 
@@ -140,3 +139,29 @@ python -m evaluator.blind_test build --out runtime/blind
 python -m evaluator.blind_test simulate runtime/blind/blind_sheet.csv   # 仅验证流程
 python -m evaluator.blind_test score runtime/blind/blind_sheet_rater.csv
 ```
+
+---
+
+## 六、语义重排：不接 embedding 也能补上的那一半
+
+没有第二家 key、又不想下载本地模型，所以走了另一条路：**词法先召回 8 条，再让模型判断
+"这句话和候选是不是在说同一件事"**，一次调用给整批候选打分。
+
+```powershell
+python -m rag.ab_test --dataset large --embedder none --expander none --rerank llm
+```
+
+| 检索器 | hit@1 | hit@3 | MRR | 误报 | hard 组 hit@1 |
+|---|---|---|---|---|---|
+| lexical | 0.667 | 0.778 | 0.724 | 0.000 | 0.333 (3/9) |
+| lexical+llm-rerank | **0.778** | **0.833** | **0.806** | 0.000 | **0.556 (5/9)** |
+
+这是第一次真正把 hard 组拉起来。但要如实说明边界：
+
+- **不是 embedding**：召回集合仍由词法决定，模型只能重排"已经召回到的候选"。
+  上界诊断里那 4 条"关键词也召不到"的 query，重排同样救不了（这次救回来 2 条）。
+- **未达统计显著**：hard 组 3/9 → 5/9，只有 2 条改变，McNemar 精确检验 p ≈ 0.5。
+  方向对，但 n=9 撑不起"提升 X%"的结论。
+- **成本**：每轮多一次调用（约 +0.5s、+¥0.0002）。默认关闭，`[features] rerank_llm = 1` 才开。
+
+真正的语义召回（"海边"↔"三亚"）仍然要 embedding；重排是"花小钱先把能救的救回来"。

@@ -46,6 +46,11 @@ python -m evaluator.blind_test score runtime/blind/blind_sheet.csv
 | **checkpoint 并发** | WAL + `busy_timeout`；启动时做一次写锁探测，被别的进程占着就**直接退出**并给出改法；运行期写锁冲突也翻译成可读错误 | `[server] checkpoint_path`、`memory/checkpoint.py` |
 | **前端容错** | 请求超时 120s；断线显示横幅 + 「重试」；未输出内容时自动重试 2 次（0.5s/1.5s），已输出则只提示不自动重发 | `web/app.js` |
 | **faithfulness** | 借 RAGAS 的定义自己实现（零依赖）：事实断言里能被证据支持的比例；全是语气句时记 n/a 而不是 0 | `evaluator/faithfulness.py` |
+| **鉴权** | 配了 `api_token` 后，除 `/health` 和静态资源外都要求 `Authorization: Bearer <token>`；前端遇到 401 会弹一次输入框并记住 | `[server] api_token` |
+| **限流** | 令牌桶：每客户端每分钟 N 次，超了返回 429 + `Retry-After` | `[server] rate_limit_per_minute` |
+| **对外暴露保护** | `HOST` 不是回环地址且没配 token → **拒绝启动**（Docker/局域网最容易踩） | `transport/security.py` |
+| **Critic 模型复核** | 规则全过、但回复带事实断言时，再让模型判一次"证据能不能支持"；判不过 → `unsupported_fact_llm` | `[features] critic_llm = 1` |
+| **语义重排** | 先词法深召回 8 条，再让模型排序（不接 embedding 供应商）；hard 组 hit@1 0.333 → 0.556 | `[features] rerank_llm = 1` |
 | **trace 标识** | 每轮一个 32-hex `trace_id`、每事件一个 16-hex `span_id`，另带 OTel 别名（`traceId`/`spanId`/`parentSpanId`） | `observability/trace.py` |
 
 > 同一台机器起多个实例时，**必须给每个实例单独的 `CHECKPOINT_PATH`**，例如
